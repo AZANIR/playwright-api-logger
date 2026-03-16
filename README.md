@@ -1,16 +1,59 @@
-# playwright-api-logger
+<p align="center">
+  <img src="https://playwright.dev/img/playwright-logo.svg" width="80" alt="Playwright Logo" />
+</p>
 
-Comprehensive API request/response logger with curl export for Playwright tests.
+<h1 align="center">playwright-api-logger</h1>
+
+<p align="center">
+  Comprehensive API request/response logger with curl export for Playwright tests
+</p>
+
+<p align="center">
+  <a href="https://www.npmjs.com/package/playwright-api-logger"><img src="https://img.shields.io/npm/v/playwright-api-logger.svg?style=flat-square&color=cb3837" alt="npm version" /></a>
+  <a href="https://www.npmjs.com/package/playwright-api-logger"><img src="https://img.shields.io/npm/dm/playwright-api-logger.svg?style=flat-square&color=blue" alt="npm downloads" /></a>
+  <a href="https://github.com/AZANIR/playwright-api-logger/blob/master/LICENSE"><img src="https://img.shields.io/github/license/AZANIR/playwright-api-logger?style=flat-square" alt="license" /></a>
+  <a href="https://playwright.dev/"><img src="https://img.shields.io/badge/Playwright-%3E%3D1.40-45ba4b?style=flat-square&logo=playwright" alt="Playwright" /></a>
+  <a href="https://www.typescriptlang.org/"><img src="https://img.shields.io/badge/TypeScript-5.0+-3178c6?style=flat-square&logo=typescript&logoColor=white" alt="TypeScript" /></a>
+</p>
+
+---
+
+## How It Works
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                      Playwright Test                            │
+│                                                                 │
+│  ┌──────────┐    ┌──────────────┐    ┌───────────────────────┐  │
+│  │ Fixture  │───>│  ApiLogger   │───>│  logs/TEST_*.log      │  │
+│  │  setup   │    │  (per test)  │    │                       │  │
+│  └──────────┘    └──────┬───────┘    │  {                    │  │
+│                         │            │    request: {...},     │  │
+│  ┌──────────┐    ┌──────▼───────┐    │    response: {...},   │  │
+│  │ API Call │───>│  BaseApi     │    │    curl: "curl ...",  │  │
+│  │ GET/POST │    │  Controller  │    │    duration: 150      │  │
+│  └──────────┘    └──────┬───────┘    │  }                    │  │
+│                         │            └───────────────────────┘  │
+│                  ┌──────▼───────┐                               │
+│                  │    Curl      │    ┌───────────────────────┐  │
+│                  │  Generator   │───>│  Ready-to-use curl    │  │
+│                  └──────────────┘    │  for Postman/terminal │  │
+│                                     └───────────────────────┘  │
+└─────────────────────────────────────────────────────────────────┘
+
+  API_LOGS=true  ──>  Logging ON     (files created in logs/)
+  API_LOGS=false ──>  Logging OFF    (zero overhead, default)
+```
 
 ## Features
 
-- Full request/response logging (method, URL, headers, body, status, timing)
-- Curl command generation — copy and paste into terminal or import into Postman
-- Environment-based control via `API_LOGS` env variable (default: `false`)
-- Test context tracking (setup / test / teardown)
-- Authorization token masking
-- Support for JSON, URL-encoded form data, and multipart/form-data
-- Error-resilient — logging never breaks your tests
+- **Full Logging** — method, URL, headers, request/response body, status, timing
+- **Curl Export** — copy from log, paste into terminal or import into Postman
+- **Env Control** — `API_LOGS=true/false` (default: `false`, zero overhead when off)
+- **Context Tracking** — setup / test / teardown phases
+- **Token Masking** — Authorization headers are automatically masked
+- **Form Data** — JSON, URL-encoded, and multipart/form-data support
+- **Error Resilient** — logging never breaks your tests
 
 ## Installation
 
@@ -20,7 +63,7 @@ npm install playwright-api-logger
 
 ## Quick Start
 
-### 1. Add logger to your fixture
+### Step 1. Add logger to your fixture
 
 ```typescript
 import { createApiLogger } from 'playwright-api-logger';
@@ -41,7 +84,7 @@ export const test = base.extend({
 });
 ```
 
-### 2. Add logging to your base API controller
+### Step 2. Add logging to your base API controller
 
 ```typescript
 import { ApiLogger } from 'playwright-api-logger';
@@ -60,7 +103,10 @@ class BaseApiController {
 
     if (this.apiLogger?.isEnabled()) {
       const body = await response.json().catch(() => response.text());
-      this.apiLogger.logApiCall('GET', url, headers, undefined, response.status(), undefined, body, duration);
+      this.apiLogger.logApiCall(
+        'GET', url, headers, undefined,
+        response.status(), undefined, body, duration
+      );
     }
 
     return response;
@@ -68,7 +114,7 @@ class BaseApiController {
 }
 ```
 
-### 3. Enable via environment variable
+### Step 3. Enable via environment variable
 
 ```bash
 # .env
@@ -82,15 +128,16 @@ API_LOGS=true npx playwright test
 
 ## Log Output
 
-Logs are saved to `logs/` directory as JSON files:
+Logs are saved to `logs/` directory:
 
 ```
 logs/
   TEST_my-test-name_2026-03-16T12-00-00.log
   SETUP_auth-setup_2026-03-16T12-00-00.log
+  TEARDOWN_cleanup_2026-03-16T12-00-00.log
 ```
 
-Each log entry contains:
+Each log entry is a JSON object:
 
 ```json
 {
@@ -112,28 +159,25 @@ Each log entry contains:
 }
 ```
 
-## API
+## API Reference
 
-### `createApiLogger(testName, context?)`
-Factory function. Returns `ApiLogger` instance.
-- `testName` — test name for log filename
-- `context` — `'setup'` | `'test'` | `'teardown'` (default: `'test'`)
+### Factory Functions
 
-### `createSetupLogger(testName)`
-Shortcut for `createApiLogger(testName, 'setup')`.
-
-### `createTeardownLogger(testName)`
-Shortcut for `createApiLogger(testName, 'teardown')`.
+| Function | Description |
+|----------|-------------|
+| `createApiLogger(testName, context?)` | Create logger (context default: `'test'`) |
+| `createSetupLogger(testName)` | Create logger with `'setup'` context |
+| `createTeardownLogger(testName)` | Create logger with `'teardown'` context |
 
 ### `ApiLogger`
 
 | Method | Description |
 |--------|-------------|
-| `logApiCall(method, url, reqHeaders, reqBody, status, resHeaders, resBody, duration)` | Log complete request/response |
+| `logApiCall(method, url, reqHeaders, reqBody, status, resHeaders, resBody, duration)` | Log complete request + response |
 | `logRequest(method, url, headers?, body?)` | Log request (pair with `logResponse`) |
 | `logResponse(status, headers?, body?)` | Log response (pair with `logRequest`) |
 | `isEnabled()` | Check if logging is active |
-| `finalize(result, additionalInfo?)` | Write test result to log |
+| `finalize(result, additionalInfo?)` | Write test result (`PASSED` / `FAILED` / `SKIPPED`) |
 | `getLogFilePath()` | Get current log file path |
 
 ### `CurlGenerator`
@@ -148,9 +192,8 @@ Shortcut for `createApiLogger(testName, 'teardown')`.
 |-------------|---------|-------------|
 | `API_LOGS` | `false` | Set to `'true'` to enable logging |
 
-### `LoggerConfig`
-
 ```typescript
+// LoggerConfig
 {
   testName?: string;        // Test name (default: 'unknown-test')
   context?: LogContext;      // 'setup' | 'test' | 'teardown'
