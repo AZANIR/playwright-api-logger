@@ -21,29 +21,38 @@
 ## How It Works
 
 ```mermaid
-flowchart LR
-    subgraph Playwright Test
-        F["Fixture\n(setup)"] --> AL["ApiLogger\n(per test)"]
-        AC["API Call\nGET / POST / PUT"] --> BC["BaseApi\nController"]
-        BC --> AL
-        AL --> CG["CurlGenerator"]
+flowchart TD
+    subgraph T[Playwright Test]
+        F[Fixture setup]
+        C[API Call<br/>GET / POST]
     end
 
-    AL -->|"JSON log"| LOG["logs/TEST_*.log\n\nrequest, response,\ncurl, duration"]
-    CG -->|"curl command"| PM["Postman / Terminal\n\nReady to paste & run"]
+    subgraph L[Logging & API layer]
+        AL[ApiLogger<br/>(per test)]
+        B[BaseApi Controller]
+        CG[Curl Generator]
+    end
 
-    ENV{"API_LOGS env"} -->|"true"| AL
-    ENV -.->|"false (default)"| OFF["Logging OFF\nzero overhead"]
+    subgraph FS[File system]
+        LOG[logs/TEST_*.log<br/>{ request, response, curl, duration }]
+        RC[Ready-to-use curl<br/>for Postman / terminal]
+    end
 
-    style F fill:#45ba4b,color:#fff
-    style AL fill:#3178c6,color:#fff
-    style CG fill:#cb3837,color:#fff
-    style LOG fill:#f5a623,color:#000
-    style PM fill:#ff6c37,color:#fff
-    style ENV fill:#6b7280,color:#fff
-    style OFF fill:#374151,color:#9ca3af
-    style AC fill:#45ba4b,color:#fff
-    style BC fill:#8b5cf6,color:#fff
+    %% test flow
+    F --> AL
+    C --> B
+
+    %% logging interaction
+    B --> AL
+    AL --> LOG
+
+    %% curl generation
+    B --> CG
+    CG --> RC
+```
+```bash
+`API_LOGS=true`  → **Logging ON**  (files created in `logs/`)  
+`API_LOGS=false` → **Logging OFF** (zero overhead, default)
 ```
 
 ## Features
