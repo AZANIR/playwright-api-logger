@@ -24,18 +24,18 @@
 flowchart TD
     subgraph T[Playwright Test]
         F[Fixture setup]
-        C[API Call<br/>GET / POST]
+        C[API Call (GET / POST)]
     end
 
     subgraph L[Logging & API layer]
-        AL[ApiLogger<br/>(per test)]
+        AL[ApiLogger (per test)]
         B[BaseApi Controller]
         CG[Curl Generator]
     end
 
     subgraph FS[File system]
-        LOG[logs/TEST_*.log<br/>{ request, response, curl, duration }]
-        RC[Ready-to-use curl<br/>for Postman / terminal]
+        LOG[logs/TEST_*.log { request, response, curl, duration }]
+        RC[Ready-to-use curl for Postman / terminal]
     end
 
     %% test flow
@@ -50,10 +50,9 @@ flowchart TD
     B --> CG
     CG --> RC
 ```
-```bash
+
 `API_LOGS=true`  → **Logging ON**  (files created in `logs/`)  
 `API_LOGS=false` → **Logging OFF** (zero overhead, default)
-```
 
 ## Features
 
