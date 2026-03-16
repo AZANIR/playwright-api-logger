@@ -20,29 +20,30 @@
 
 ## How It Works
 
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                      Playwright Test                            │
-│                                                                 │
-│  ┌──────────┐    ┌──────────────┐    ┌───────────────────────┐  │
-│  │ Fixture  │───>│  ApiLogger   │───>│  logs/TEST_*.log      │  │
-│  │  setup   │    │  (per test)  │    │                       │  │
-│  └──────────┘    └──────┬───────┘    │  {                    │  │
-│                         │            │    request: {...},     │  │
-│  ┌──────────┐    ┌──────▼───────┐    │    response: {...},   │  │
-│  │ API Call │───>│  BaseApi     │    │    curl: "curl ...",  │  │
-│  │ GET/POST │    │  Controller  │    │    duration: 150      │  │
-│  └──────────┘    └──────┬───────┘    │  }                    │  │
-│                         │            └───────────────────────┘  │
-│                  ┌──────▼───────┐                               │
-│                  │    Curl      │    ┌───────────────────────┐  │
-│                  │  Generator   │───>│  Ready-to-use curl    │  │
-│                  └──────────────┘    │  for Postman/terminal │  │
-│                                     └───────────────────────┘  │
-└─────────────────────────────────────────────────────────────────┘
+```mermaid
+flowchart LR
+    subgraph Playwright Test
+        F["Fixture\n(setup)"] --> AL["ApiLogger\n(per test)"]
+        AC["API Call\nGET / POST / PUT"] --> BC["BaseApi\nController"]
+        BC --> AL
+        AL --> CG["CurlGenerator"]
+    end
 
-  API_LOGS=true  ──>  Logging ON     (files created in logs/)
-  API_LOGS=false ──>  Logging OFF    (zero overhead, default)
+    AL -->|"JSON log"| LOG["logs/TEST_*.log\n\nrequest, response,\ncurl, duration"]
+    CG -->|"curl command"| PM["Postman / Terminal\n\nReady to paste & run"]
+
+    ENV{"API_LOGS env"} -->|"true"| AL
+    ENV -.->|"false (default)"| OFF["Logging OFF\nzero overhead"]
+
+    style F fill:#45ba4b,color:#fff
+    style AL fill:#3178c6,color:#fff
+    style CG fill:#cb3837,color:#fff
+    style LOG fill:#f5a623,color:#000
+    style PM fill:#ff6c37,color:#fff
+    style ENV fill:#6b7280,color:#fff
+    style OFF fill:#374151,color:#9ca3af
+    style AC fill:#45ba4b,color:#fff
+    style BC fill:#8b5cf6,color:#fff
 ```
 
 ## Features
