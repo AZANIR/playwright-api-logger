@@ -24,7 +24,7 @@
 flowchart TD
     subgraph T[Playwright Test]
         F[Fixture setup]
-        C[API Call "GET" / "POST"]
+        C[API Call GET/POST]
     end
 
     subgraph L[Logging & API layer]
