@@ -21,7 +21,7 @@
 ## How It Works
 
 ```mermaid
-flowchart TD
+flowchart LR
     subgraph T[Playwright Test]
         F[Fixture setup]
         C[API Call GET/POST/PUT/DELETE]
@@ -56,10 +56,10 @@ API_LOGS=false → Logging OFF  (zero overhead, default)
 ## Features
 
 - **One-line integration** — just wrap `request` with `withApiLogging()`, zero changes to controllers/clients
-- **Full Logging** — method, URL, headers, request/response body, status, timing
+- **Structured logs** — one JSON document per test with `preconditions`, `steps`, and `teardown` sections
+- **Step descriptions** — describe what each API call does with `.describe()`
 - **Curl Export** — copy from log, paste into terminal or import into Postman
 - **Env Control** — `API_LOGS=true/false` (default: `false`, zero overhead when off)
-- **Context Tracking** — setup / test / teardown phases
 - **Token Masking** — Authorization headers are automatically masked
 - **Form Data** — JSON, URL-encoded, and multipart/form-data support
 - **Error Resilient** — logging never breaks your tests
@@ -79,14 +79,37 @@ import { withApiLogging } from 'playwright-api-logger';
 
 export const test = base.extend({
   apiClient: async ({ request }, use, testInfo) => {
-    // Just wrap request — all API calls are logged automatically
-    const apiClient = new ApiClient(withApiLogging(request, testInfo));
+    const loggedRequest = withApiLogging(request, testInfo);
+    const apiClient = new ApiClient(loggedRequest);
     await use(apiClient);
+    loggedRequest.__logger.finalize(
+      testInfo.status === 'passed' ? 'PASSED' : 'FAILED'
+    );
   },
 });
 ```
 
 No changes to your controllers, clients, or test files.
+
+### With preconditions and step descriptions
+
+```typescript
+test('GET Without token (401)', async ({ apiClient, request }) => {
+  const loggedRequest = (request as any).__logger as ApiLogger;
+
+  // Mark following calls as preconditions
+  loggedRequest.startPreconditions();
+  loggedRequest.describe('Get employee ID for test');
+  const employees = await apiClient.getEmployees({ page: 1, size: 1 });
+  const employeeId = employees.items[0].id;
+
+  // Switch to test steps
+  loggedRequest.startTest();
+  loggedRequest.describe('Get children without auth token');
+  const response = await apiClient.getChildrenWithoutAuth(employeeId);
+  expect(response.status).toBe(401);
+});
+```
 
 ### Enable via environment variable
 
@@ -100,61 +123,70 @@ API_LOGS=false
 API_LOGS=true npx playwright test
 ```
 
-### Finalize with test result (optional)
-
-```typescript
-apiClient: async ({ request }, use, testInfo) => {
-  const loggedRequest = withApiLogging(request, testInfo);
-  const apiClient = new ApiClient(loggedRequest);
-  await use(apiClient);
-
-  // Write PASSED/FAILED to log
-  loggedRequest.__logger.finalize(
-    testInfo.status === 'passed' ? 'PASSED' : 'FAILED'
-  );
-},
-```
-
-### Setup / Teardown logging
-
-```typescript
-// In beforeAll
-const loggedRequest = withApiLogging(request, { testName: 'auth-setup', context: 'setup' });
-
-// In afterAll
-const loggedRequest = withApiLogging(request, { testName: 'cleanup', context: 'teardown' });
-```
-
 ## Log Output
 
-Logs are saved to `logs/` directory:
+One structured JSON document per test:
 
 ```
 logs/
-  TEST_my-test-name_2026-03-16T12-00-00.log
-  SETUP_auth-setup_2026-03-16T12-00-00.log
-  TEARDOWN_cleanup_2026-03-16T12-00-00.log
+  get-without-token-401_2026-03-16T18-33-03.log
+  create-employee_2026-03-16T18-35-10.log
 ```
 
-Each log entry is a JSON object:
+### Example log:
 
 ```json
 {
-  "timestamp": "2026-03-16T12:00:00.000Z",
-  "testName": "my-test-name",
-  "context": "test",
-  "request": {
-    "method": "POST",
-    "url": "https://api.example.com/users",
-    "headers": { "Content-Type": "application/json" },
-    "body": { "name": "John" }
+  "test": {
+    "name": "GET Without token (401)",
+    "file": "tests/api/employees/children.spec.ts",
+    "startedAt": "2026-03-16T18:33:03.654Z",
+    "finishedAt": "2026-03-16T18:33:04.300Z",
+    "duration": 646,
+    "result": "PASSED"
   },
-  "response": {
-    "status": 201,
-    "body": { "id": 1, "name": "John" }
-  },
-  "duration": 150,
-  "curl": "curl -X POST 'https://api.example.com/users' -H 'Content-Type: application/json' --data '{\"name\":\"John\"}'"
+  "preconditions": [
+    {
+      "step": 1,
+      "description": "Get employee ID for test",
+      "timestamp": "2026-03-16T18:33:04.174Z",
+      "request": {
+        "method": "GET",
+        "url": "https://api.example.com/employees?page=1&size=1"
+      },
+      "response": {
+        "status": 200,
+        "body": { "items": [{ "id": "abc-123" }], "total": 27 }
+      },
+      "duration": 501,
+      "curl": "curl -X GET 'https://api.example.com/employees?page=1&size=1' -H 'Accept: application/json'"
+    }
+  ],
+  "steps": [
+    {
+      "step": 1,
+      "description": "Get children without auth token",
+      "timestamp": "2026-03-16T18:33:04.242Z",
+      "request": {
+        "method": "GET",
+        "url": "https://api.example.com/employees/abc-123/children"
+      },
+      "response": {
+        "status": 401,
+        "body": { "detail": "Not authenticated" }
+      },
+      "duration": 67,
+      "curl": "curl -X GET 'https://api.example.com/employees/abc-123/children'"
+    }
+  ],
+  "teardown": [],
+  "summary": {
+    "totalRequests": 2,
+    "preconditions": 1,
+    "testSteps": 1,
+    "teardown": 0,
+    "totalDuration": 568
+  }
 }
 ```
 
@@ -165,28 +197,22 @@ Each log entry is a JSON object:
 Main integration point. Wraps `APIRequestContext` with a Proxy that logs all HTTP calls.
 
 ```typescript
-// With TestInfo (recommended)
 const loggedRequest = withApiLogging(request, testInfo);
-
-// With options
-const loggedRequest = withApiLogging(request, {
-  testName: 'my-test',
-  context: 'setup',
-  logDirectory: 'custom-logs/',
-  maskAuthTokens: true,
-});
-
-// Access logger for finalization
-loggedRequest.__logger.finalize('PASSED');
+loggedRequest.__logger // access the ApiLogger instance
 ```
 
-### Factory Functions (advanced)
+### `ApiLogger` — context & description
 
-| Function | Description |
-|----------|-------------|
-| `createApiLogger(testName, context?)` | Create standalone logger |
-| `createSetupLogger(testName)` | Logger with `'setup'` context |
-| `createTeardownLogger(testName)` | Logger with `'teardown'` context |
+| Method | Description |
+|--------|-------------|
+| `describe(text)` | Set description for the **next** API call |
+| `startPreconditions()` | Following calls → `preconditions` section |
+| `startTest()` | Following calls → `steps` section |
+| `startTeardown()` | Following calls → `teardown` section |
+| `setContext(ctx)` | Set context directly (`'preconditions'` / `'test'` / `'teardown'`) |
+| `finalize(result, info?)` | Write structured JSON document to file |
+| `isEnabled()` | Check if logging is active |
+| `getLogFilePath()` | Get current log file path |
 
 ### `CurlGenerator`
 
@@ -205,19 +231,24 @@ loggedRequest.__logger.finalize('PASSED');
 ```typescript
 {
   testName?: string;        // Test name (default: 'unknown-test')
-  context?: LogContext;      // 'setup' | 'test' | 'teardown'
+  testFile?: string;        // Test file path
+  context?: LogContext;      // 'preconditions' | 'test' | 'teardown'
   logDirectory?: string;     // Custom log dir (default: 'logs/')
   maskAuthTokens?: boolean;  // Mask auth headers (default: true)
+  logger?: ApiLogger;        // Share logger across phases
 }
 ```
 
-## Migration from v1
-
-v1 required changes to controllers, clients, and fixtures. v2 needs only **one line**:
+## Migration from v1 → v2
 
 ```diff
-- const apiClient = new ApiClient(request);
-+ const apiClient = new ApiClient(withApiLogging(request, testInfo));
+- // v1: manual logger setup in controllers and clients
+- const logger = createApiLogger(testInfo.title);
+- apiClient.setApiLogger(logger);
+
++ // v2: one line, structured logs with sections
++ const loggedRequest = withApiLogging(request, testInfo);
++ const apiClient = new ApiClient(loggedRequest);
 ```
 
 ## License

@@ -1,11 +1,14 @@
 /**
  * API Logger for capturing and logging HTTP requests/responses
+ * Produces a single structured test document with preconditions, steps, and teardown sections.
+ *
  * Features:
- * - Comprehensive request/response logging
+ * - Structured test document (one JSON per test)
+ * - Preconditions / Steps / Teardown sections
+ * - Step descriptions and numbering
  * - Curl command generation for manual testing
  * - Environment-based enable/disable via API_LOGS
- * - Automatic file logging with JSON format
- * - Test context tracking (setup/test/teardown)
+ * - Test context tracking and switching
  */
 
 import fs from 'fs';
@@ -16,43 +19,47 @@ import {
   LoggerConfig,
   RequestLogData,
   ResponseLogData,
-  LogEntry,
+  StepLogEntry,
+  TestLogDocument,
 } from './types';
 
 export class ApiLogger {
   private enabled: boolean;
   private testName: string;
-  private context: LogContext;
+  private testFile?: string;
+  private currentContext: LogContext;
   private logDirectory: string;
   private logFilePath: string | null = null;
   private maskAuthTokens: boolean;
-  private currentRequest: RequestLogData | null = null;
-  private requestStartTime: number | null = null;
+  private startedAt: string;
+
+  // Structured storage
+  private preconditions: StepLogEntry[] = [];
+  private steps: StepLogEntry[] = [];
+  private teardownSteps: StepLogEntry[] = [];
+
+  // Next step description
+  private nextDescription?: string;
 
   constructor(config: LoggerConfig = {}) {
-    // Check if logging is enabled via environment variable
     this.enabled = process.env.API_LOGS === 'true';
 
     this.testName = config.testName || 'unknown-test';
-    this.context = config.context || 'test';
+    this.testFile = config.testFile;
+    this.currentContext = config.context || 'test';
     this.logDirectory = config.logDirectory || this.getDefaultLogDirectory();
     this.maskAuthTokens = config.maskAuthTokens ?? true;
+    this.startedAt = new Date().toISOString();
 
     if (this.enabled) {
       this.initializeLogFile();
     }
   }
 
-  /**
-   * Get default log directory path
-   */
   private getDefaultLogDirectory(): string {
     return path.join(process.cwd(), 'logs');
   }
 
-  /**
-   * Initialize log file and directory
-   */
   private initializeLogFile(): void {
     try {
       if (!fs.existsSync(this.logDirectory)) {
@@ -61,16 +68,51 @@ export class ApiLogger {
 
       const timestamp = this.generateTimestamp();
       const sanitizedTestName = this.sanitizeTestName(this.testName);
-      const filename = `${this.context.toUpperCase()}_${sanitizedTestName}_${timestamp}.log`;
+      const filename = `${sanitizedTestName}_${timestamp}.log`;
       this.logFilePath = path.join(this.logDirectory, filename);
-
-      if (!fs.existsSync(this.logFilePath)) {
-        fs.writeFileSync(this.logFilePath, '');
-      }
     } catch (error) {
       console.warn('[ApiLogger] Failed to initialize log file:', error);
       this.logFilePath = null;
     }
+  }
+
+  /**
+   * Set description for the next API call
+   * @example
+   * logger.describe('Get employee ID for testing');
+   * await apiClient.getEmployees(); // this call gets the description
+   */
+  describe(description: string): void {
+    this.nextDescription = description;
+  }
+
+  /**
+   * Switch current context (preconditions → test → teardown)
+   * All subsequent API calls will be logged to the new context section
+   */
+  setContext(context: LogContext): void {
+    this.currentContext = context;
+  }
+
+  /**
+   * Shortcut: switch to preconditions context
+   */
+  startPreconditions(): void {
+    this.currentContext = 'preconditions';
+  }
+
+  /**
+   * Shortcut: switch to test steps context
+   */
+  startTest(): void {
+    this.currentContext = 'test';
+  }
+
+  /**
+   * Shortcut: switch to teardown context
+   */
+  startTeardown(): void {
+    this.currentContext = 'teardown';
   }
 
   /**
@@ -91,7 +133,6 @@ export class ApiLogger {
     }
 
     try {
-      // Extract content type from headers
       let contentType: string | undefined;
       if (requestHeaders) {
         for (const [key, value] of Object.entries(requestHeaders)) {
@@ -116,94 +157,111 @@ export class ApiLogger {
         body: responseBody,
       };
 
-      // Generate curl command
       const curl = CurlGenerator.generate(requestData, this.maskAuthTokens);
 
-      // Create log entry
-      const logEntry: LogEntry = {
+      // Get target array and step number
+      const targetArray = this.getTargetArray();
+      const stepNumber = targetArray.length + 1;
+
+      const stepEntry: StepLogEntry = {
+        step: stepNumber,
+        description: this.nextDescription,
         timestamp: new Date().toISOString(),
-        testName: this.testName,
-        context: this.context,
         request: requestData,
         response: responseData,
         duration,
         curl,
       };
 
-      this.writeLogEntry(logEntry);
+      // Clear description after use
+      this.nextDescription = undefined;
+
+      targetArray.push(stepEntry);
     } catch (error) {
       console.warn('[ApiLogger] Error logging API call:', error);
     }
   }
 
   /**
-   * Log just the request part (when response isn't available yet)
+   * Get the target array for current context
    */
-  logRequest(method: string, url: string, headers?: Record<string, string | string[]>, body?: any): void {
+  private getTargetArray(): StepLogEntry[] {
+    switch (this.currentContext) {
+      case 'preconditions':
+        return this.preconditions;
+      case 'teardown':
+        return this.teardownSteps;
+      case 'test':
+      default:
+        return this.steps;
+    }
+  }
+
+  /**
+   * Finalize and write the structured test document to file
+   */
+  finalize(result: 'PASSED' | 'FAILED' | 'SKIPPED', additionalInfo?: Record<string, any>): void {
     if (!this.enabled) {
       return;
     }
 
-    this.currentRequest = { method, url, headers, body };
-    this.requestStartTime = Date.now();
-  }
+    try {
+      const finishedAt = new Date().toISOString();
+      const startTime = new Date(this.startedAt).getTime();
+      const endTime = new Date(finishedAt).getTime();
 
-  /**
-   * Log just the response part (pairs with logRequest)
-   */
-  logResponse(status: number, headers?: Record<string, string>, body?: any): void {
-    if (!this.enabled || !this.currentRequest) {
-      return;
+      // Calculate total API duration
+      const allSteps = [...this.preconditions, ...this.steps, ...this.teardownSteps];
+      const totalApiDuration = allSteps.reduce((sum, s) => sum + s.duration, 0);
+
+      const document: TestLogDocument = {
+        test: {
+          name: this.testName,
+          file: this.testFile || additionalInfo?.testFile,
+          startedAt: this.startedAt,
+          finishedAt,
+          duration: endTime - startTime,
+          result,
+        },
+        preconditions: this.preconditions,
+        steps: this.steps,
+        teardown: this.teardownSteps,
+        summary: {
+          totalRequests: allSteps.length,
+          preconditions: this.preconditions.length,
+          testSteps: this.steps.length,
+          teardown: this.teardownSteps.length,
+          totalDuration: totalApiDuration,
+        },
+      };
+
+      this.writeDocument(document);
+    } catch (error) {
+      console.warn('[ApiLogger] Error finalizing log:', error);
     }
-
-    const duration = this.requestStartTime ? Date.now() - this.requestStartTime : 0;
-
-    this.logApiCall(
-      this.currentRequest.method,
-      this.currentRequest.url,
-      this.currentRequest.headers,
-      this.currentRequest.body,
-      status,
-      headers,
-      body,
-      duration,
-    );
-
-    this.currentRequest = null;
-    this.requestStartTime = null;
   }
 
   /**
-   * Write log entry to file
+   * Write structured document to file
    */
-  private writeLogEntry(entry: LogEntry): void {
+  private writeDocument(document: TestLogDocument): void {
     try {
       if (!this.logFilePath) {
         return;
       }
-
-      const logLine = JSON.stringify(entry, null, 2);
-      fs.appendFileSync(this.logFilePath, logLine + '\n\n');
+      fs.writeFileSync(this.logFilePath, JSON.stringify(document, null, 2) + '\n');
     } catch (error) {
       console.warn('[ApiLogger] Failed to write log file:', error);
     }
   }
 
-  /**
-   * Generate ISO timestamp for filenames
-   */
   private generateTimestamp(): string {
-    const now = new Date();
-    return now
+    return new Date()
       .toISOString()
       .replace(/[:.]/g, '-')
-      .replace('T', 'T')
       .split('.')[0];
   }
 
-  /**
-   * Sanitize test name for use in filename
-   */
   private sanitizeTestName(name: string): string {
     return name
       .toLowerCase()
@@ -213,45 +271,12 @@ export class ApiLogger {
       .substring(0, 80);
   }
 
-  /**
-   * Get the current log file path
-   */
   getLogFilePath(): string | null {
     return this.logFilePath;
   }
 
-  /**
-   * Check if logger is enabled
-   */
   isEnabled(): boolean {
     return this.enabled;
-  }
-
-  /**
-   * Finalize logging for test completion
-   */
-  finalize(result: 'PASSED' | 'FAILED' | 'SKIPPED', additionalInfo?: Record<string, any>): void {
-    if (!this.enabled) {
-      return;
-    }
-
-    try {
-      const finalizationEntry = {
-        timestamp: new Date().toISOString(),
-        step: 'TEST_FINALIZATION',
-        testName: this.testName,
-        context: this.context,
-        result,
-        logFilePath: this.logFilePath,
-        additionalInfo,
-      };
-
-      if (this.logFilePath) {
-        fs.appendFileSync(this.logFilePath, JSON.stringify(finalizationEntry, null, 2) + '\n\n');
-      }
-    } catch (error) {
-      console.warn('[ApiLogger] Error finalizing log:', error);
-    }
   }
 }
 
@@ -263,10 +288,10 @@ export function createApiLogger(testName: string, context: LogContext = 'test'):
 }
 
 /**
- * Factory for setup context
+ * Factory for setup/preconditions context
  */
 export function createSetupLogger(testName: string): ApiLogger {
-  return new ApiLogger({ testName, context: 'setup' });
+  return new ApiLogger({ testName, context: 'preconditions' });
 }
 
 /**

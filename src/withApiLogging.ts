@@ -10,12 +10,16 @@ import { LogContext, LoggerConfig } from './types';
 export interface ApiLoggingOptions {
   /** Test name for log filename (auto-detected from testInfo if provided) */
   testName?: string;
-  /** Log context: 'setup' | 'test' | 'teardown' (default: 'test') */
+  /** Test file path (auto-detected from testInfo if provided) */
+  testFile?: string;
+  /** Log context: 'preconditions' | 'test' | 'teardown' (default: 'test') */
   context?: LogContext;
   /** Custom log directory (default: 'logs/') */
   logDirectory?: string;
   /** Mask Authorization headers (default: true) */
   maskAuthTokens?: boolean;
+  /** Existing logger to share across setup/test/teardown phases */
+  logger?: ApiLogger;
 }
 
 /**
@@ -32,36 +36,53 @@ export interface ApiLoggingOptions {
  * const apiClient = new ApiClient(loggedRequest);
  *
  * @example
- * // With options:
- * const loggedRequest = withApiLogging(request, { testName: 'my-test', context: 'setup' });
+ * // With preconditions and test steps:
+ * const loggedRequest = withApiLogging(request, testInfo);
+ * loggedRequest.__logger.startPreconditions();
+ * loggedRequest.__logger.describe('Get employee for test');
+ * await apiClient.getEmployees();
+ * loggedRequest.__logger.startTest();
+ * loggedRequest.__logger.describe('Try to access without token');
+ * await apiClient.getWithoutAuth();
+ * loggedRequest.__logger.finalize('PASSED');
  */
 export function withApiLogging(
   request: APIRequestContext,
   testInfoOrOptions?: TestInfo | ApiLoggingOptions,
 ): APIRequestContext & { __logger: ApiLogger } {
-  // Resolve options
   let options: ApiLoggingOptions;
 
   if (testInfoOrOptions && 'title' in testInfoOrOptions) {
-    // TestInfo object
+    const testInfo = testInfoOrOptions as TestInfo;
     options = {
-      testName: (testInfoOrOptions as TestInfo).title,
+      testName: testInfo.title,
+      testFile: testInfo.file,
       context: 'test',
     };
   } else {
     options = (testInfoOrOptions as ApiLoggingOptions) || {};
   }
 
-  const config: LoggerConfig = {
-    testName: options.testName,
-    context: options.context || 'test',
-    logDirectory: options.logDirectory,
-    maskAuthTokens: options.maskAuthTokens,
-  };
+  // Use shared logger or create new
+  let logger: ApiLogger;
 
-  const logger = new ApiLogger(config);
+  if (options.logger) {
+    logger = options.logger;
+    if (options.context) {
+      logger.setContext(options.context);
+    }
+  } else {
+    const config: LoggerConfig = {
+      testName: options.testName,
+      testFile: options.testFile,
+      context: options.context || 'test',
+      logDirectory: options.logDirectory,
+      maskAuthTokens: options.maskAuthTokens,
+    };
+    logger = new ApiLogger(config);
+  }
 
-  // If logging is disabled, return original request with dummy logger
+  // If logging is disabled, return original request with logger ref
   if (!logger.isEnabled()) {
     return Object.assign(request, { __logger: logger });
   }
@@ -72,26 +93,22 @@ export function withApiLogging(
     get(target: APIRequestContext, prop: string | symbol, receiver: any) {
       const propName = typeof prop === 'string' ? prop : '';
 
-      // Expose logger reference
       if (propName === '__logger') {
         return logger;
       }
 
       if (HTTP_METHODS.includes(propName)) {
-        return async (url: string, options?: any) => {
-          const method = propName === 'fetch' ? (options?.method || 'GET') : propName;
+        return async (url: string, reqOptions?: any) => {
+          const method = propName === 'fetch' ? (reqOptions?.method || 'GET') : propName;
           const startTime = Date.now();
 
-          // Extract request details from Playwright options
-          const requestHeaders = options?.headers;
-          const requestBody = extractBody(options);
-          const contentType = extractContentType(options, requestHeaders);
+          const requestHeaders = reqOptions?.headers;
+          const requestBody = extractBody(reqOptions);
 
           try {
-            const response: APIResponse = await (target as any)[propName](url, options);
+            const response: APIResponse = await (target as any)[propName](url, reqOptions);
             const duration = Date.now() - startTime;
 
-            // Parse response body safely
             const responseBody = await safeParseResponseBody(response);
             const responseHeaders = extractResponseHeaders(response);
 
@@ -133,9 +150,6 @@ export function withApiLogging(
   return Object.assign(proxy, { __logger: logger }) as APIRequestContext & { __logger: ApiLogger };
 }
 
-/**
- * Extract body from Playwright request options
- */
 function extractBody(options?: any): any {
   if (!options) return undefined;
   if (options.data) return options.data;
@@ -144,25 +158,6 @@ function extractBody(options?: any): any {
   return undefined;
 }
 
-/**
- * Detect content type from options
- */
-function extractContentType(options?: any, headers?: Record<string, string>): string | undefined {
-  if (options?.form) return 'application/x-www-form-urlencoded';
-  if (options?.multipart) return 'multipart/form-data';
-  if (headers) {
-    for (const [key, value] of Object.entries(headers)) {
-      if (key.toLowerCase() === 'content-type') {
-        return Array.isArray(value) ? value[0] : String(value);
-      }
-    }
-  }
-  return undefined;
-}
-
-/**
- * Safely parse response body (try JSON, fallback to text)
- */
 async function safeParseResponseBody(response: APIResponse): Promise<any> {
   try {
     return await response.json();
@@ -175,9 +170,6 @@ async function safeParseResponseBody(response: APIResponse): Promise<any> {
   }
 }
 
-/**
- * Extract headers from APIResponse
- */
 function extractResponseHeaders(response: APIResponse): Record<string, string> | undefined {
   try {
     return response.headers();
