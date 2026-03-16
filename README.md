@@ -24,40 +24,38 @@
 flowchart TD
     subgraph T[Playwright Test]
         F[Fixture setup]
-        C[API Call GET/POST]
+        C[API Call GET/POST/PUT/DELETE]
     end
 
-    subgraph L[Logging & API layer]
-        AL[ApiLogger for each test]
-        B[BaseApi Controller]
-        CG[Curl Generator]
+    subgraph P[playwright-api-logger]
+        W["withApiLogging(request, testInfo)"]
+        PR[Proxy over APIRequestContext]
+        AL[ApiLogger]
+        CG[CurlGenerator]
     end
 
-    subgraph FS[File system]
-        LOG[logs/TEST_*.log - request, response, curl, duration]
+    subgraph O[Output]
+        LOG["logs/TEST_*.log<br/>request, response, curl, duration"]
         RC[Ready-to-use curl for Postman / terminal]
     end
 
-    %% test flow
-    F --> AL
-    C --> B
-
-    %% logging interaction
-    B --> AL
+    F -->|"1 line change"| W
+    W --> PR
+    C --> PR
+    PR --> AL
     AL --> LOG
-
-    %% curl generation
-    B --> CG
+    AL --> CG
     CG --> RC
 ```
 
 ```
-`API_LOGS=true`  → **Logging ON**  (files created in `logs/`)  
-`API_LOGS=false` → **Logging OFF** (zero overhead, default)
+API_LOGS=true  → Logging ON   (files created in logs/)
+API_LOGS=false → Logging OFF  (zero overhead, default)
 ```
 
 ## Features
 
+- **One-line integration** — just wrap `request` with `withApiLogging()`, zero changes to controllers/clients
 - **Full Logging** — method, URL, headers, request/response body, status, timing
 - **Curl Export** — copy from log, paste into terminal or import into Postman
 - **Env Control** — `API_LOGS=true/false` (default: `false`, zero overhead when off)
@@ -74,58 +72,23 @@ npm install playwright-api-logger
 
 ## Quick Start
 
-### Step 1. Add logger to your fixture
+### One line in your fixture — that's it!
 
 ```typescript
-import { createApiLogger } from 'playwright-api-logger';
+import { withApiLogging } from 'playwright-api-logger';
 
 export const test = base.extend({
   apiClient: async ({ request }, use, testInfo) => {
-    const apiClient = new ApiClient(request);
-
-    if (process.env.API_LOGS === 'true') {
-      const logger = createApiLogger(testInfo.title, 'test');
-      apiClient.setApiLogger(logger);
-      await use(apiClient);
-      logger.finalize(testInfo.status === 'passed' ? 'PASSED' : 'FAILED');
-    } else {
-      await use(apiClient);
-    }
+    // Just wrap request — all API calls are logged automatically
+    const apiClient = new ApiClient(withApiLogging(request, testInfo));
+    await use(apiClient);
   },
 });
 ```
 
-### Step 2. Add logging to your base API controller
+No changes to your controllers, clients, or test files.
 
-```typescript
-import { ApiLogger } from 'playwright-api-logger';
-
-class BaseApiController {
-  protected apiLogger: ApiLogger | null = null;
-
-  setApiLogger(logger: ApiLogger): void {
-    this.apiLogger = logger;
-  }
-
-  async get(url: string, headers?: Record<string, string>) {
-    const startTime = Date.now();
-    const response = await this.request.get(url, { headers });
-    const duration = Date.now() - startTime;
-
-    if (this.apiLogger?.isEnabled()) {
-      const body = await response.json().catch(() => response.text());
-      this.apiLogger.logApiCall(
-        'GET', url, headers, undefined,
-        response.status(), undefined, body, duration
-      );
-    }
-
-    return response;
-  }
-}
-```
-
-### Step 3. Enable via environment variable
+### Enable via environment variable
 
 ```bash
 # .env
@@ -135,6 +98,31 @@ API_LOGS=false
 ```bash
 # Run with logging enabled
 API_LOGS=true npx playwright test
+```
+
+### Finalize with test result (optional)
+
+```typescript
+apiClient: async ({ request }, use, testInfo) => {
+  const loggedRequest = withApiLogging(request, testInfo);
+  const apiClient = new ApiClient(loggedRequest);
+  await use(apiClient);
+
+  // Write PASSED/FAILED to log
+  loggedRequest.__logger.finalize(
+    testInfo.status === 'passed' ? 'PASSED' : 'FAILED'
+  );
+},
+```
+
+### Setup / Teardown logging
+
+```typescript
+// In beforeAll
+const loggedRequest = withApiLogging(request, { testName: 'auth-setup', context: 'setup' });
+
+// In afterAll
+const loggedRequest = withApiLogging(request, { testName: 'cleanup', context: 'teardown' });
 ```
 
 ## Log Output
@@ -172,24 +160,33 @@ Each log entry is a JSON object:
 
 ## API Reference
 
-### Factory Functions
+### `withApiLogging(request, testInfoOrOptions?)` ⭐
+
+Main integration point. Wraps `APIRequestContext` with a Proxy that logs all HTTP calls.
+
+```typescript
+// With TestInfo (recommended)
+const loggedRequest = withApiLogging(request, testInfo);
+
+// With options
+const loggedRequest = withApiLogging(request, {
+  testName: 'my-test',
+  context: 'setup',
+  logDirectory: 'custom-logs/',
+  maskAuthTokens: true,
+});
+
+// Access logger for finalization
+loggedRequest.__logger.finalize('PASSED');
+```
+
+### Factory Functions (advanced)
 
 | Function | Description |
 |----------|-------------|
-| `createApiLogger(testName, context?)` | Create logger (context default: `'test'`) |
-| `createSetupLogger(testName)` | Create logger with `'setup'` context |
-| `createTeardownLogger(testName)` | Create logger with `'teardown'` context |
-
-### `ApiLogger`
-
-| Method | Description |
-|--------|-------------|
-| `logApiCall(method, url, reqHeaders, reqBody, status, resHeaders, resBody, duration)` | Log complete request + response |
-| `logRequest(method, url, headers?, body?)` | Log request (pair with `logResponse`) |
-| `logResponse(status, headers?, body?)` | Log response (pair with `logRequest`) |
-| `isEnabled()` | Check if logging is active |
-| `finalize(result, additionalInfo?)` | Write test result (`PASSED` / `FAILED` / `SKIPPED`) |
-| `getLogFilePath()` | Get current log file path |
+| `createApiLogger(testName, context?)` | Create standalone logger |
+| `createSetupLogger(testName)` | Logger with `'setup'` context |
+| `createTeardownLogger(testName)` | Logger with `'teardown'` context |
 
 ### `CurlGenerator`
 
@@ -203,14 +200,24 @@ Each log entry is a JSON object:
 |-------------|---------|-------------|
 | `API_LOGS` | `false` | Set to `'true'` to enable logging |
 
+### `ApiLoggingOptions`
+
 ```typescript
-// LoggerConfig
 {
   testName?: string;        // Test name (default: 'unknown-test')
   context?: LogContext;      // 'setup' | 'test' | 'teardown'
   logDirectory?: string;     // Custom log dir (default: 'logs/')
   maskAuthTokens?: boolean;  // Mask auth headers (default: true)
 }
+```
+
+## Migration from v1
+
+v1 required changes to controllers, clients, and fixtures. v2 needs only **one line**:
+
+```diff
+- const apiClient = new ApiClient(request);
++ const apiClient = new ApiClient(withApiLogging(request, testInfo));
 ```
 
 ## License
