@@ -1,5 +1,10 @@
+.cursor/
 node_modules/
 dist/
 *.tsbuildinfo
 .DS_Store
 id_rsa_azanir*
+CLAUDE.md
+playwright-report/
+logs/
+test-results/
