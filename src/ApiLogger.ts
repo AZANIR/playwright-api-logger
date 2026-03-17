@@ -308,7 +308,7 @@ export function createSetupLogger(
   testName: string,
   config?: Partial<LoggerConfig>,
 ): ApiLogger {
-  return new ApiLogger({ testName, context: 'preconditions', ...config });
+  return new ApiLogger({ testName, ...config, context: 'preconditions' });
 }
 
 /**
@@ -318,5 +318,5 @@ export function createTeardownLogger(
   testName: string,
   config?: Partial<LoggerConfig>,
 ): ApiLogger {
-  return new ApiLogger({ testName, context: 'teardown', ...config });
+  return new ApiLogger({ testName, ...config, context: 'teardown' });
 }

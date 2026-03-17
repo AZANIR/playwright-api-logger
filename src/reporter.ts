@@ -121,8 +121,14 @@ class ApiLoggerReporter implements Reporter {
         const content = fs.readFileSync(filePath, 'utf-8');
         const data = JSON.parse(content) as TestLogDocument;
 
-        // Validate minimum structure
-        if (data?.test && data?.summary) {
+        // Validate minimum structure + startedAt for merge (avoids NaN sort keys)
+        const startedAt = data?.test?.startedAt;
+        if (
+          data?.test &&
+          data?.summary &&
+          startedAt &&
+          !isNaN(new Date(startedAt).getTime())
+        ) {
           files.push({ filePath, filename, data });
         }
       } catch {

@@ -389,6 +389,15 @@ test.describe('ApiLoggerReporter', () => {
       // Write invalid JSON
       fs.writeFileSync(path.join(logDir, 'bad.log'), 'not json');
 
+      // Write file with test+summary but invalid startedAt (should be skipped)
+      writeRawLog(logDir, 'invalid-startedAt.log', {
+        test: {
+          name: 'invalid',
+          startedAt: 'not-a-date',
+          result: 'PASSED',
+        },
+      });
+
       // Write valid file
       writeRawLog(logDir, 'good.log', {
         test: {
