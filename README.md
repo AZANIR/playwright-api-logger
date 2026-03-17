@@ -134,22 +134,23 @@ Reporter options:
 
 ### Merge with beforeAll/afterAll hooks
 
-For merge to work, each logger (including in hooks) must have `testFile` and `titlePath`:
+Two patterns:
+
+**A) Reporter merge** — separate loggers produce separate files; Reporter merges them when they share `testFile` and `titlePath` (≥3 elements). Each logger (including in hooks) must set these:
 
 ```typescript
 test.beforeAll(async ({ request }) => {
   const logged = withApiLogging(request, {
-    sharedKey: 'my-suite',
     testName: 'Setup',
     testFile: 'tests/api/users.spec.ts',
     titlePath: ['', 'Users API', 'Setup'],
     context: 'preconditions',
   });
-  // ... use logged
+  // ... use logged, finalize in afterAll
 });
 ```
 
-Or use `sharedKey` to write one log file — then merge is not needed.
+**B) sharedKey** — one logger instance shared across hooks + test via `getSharedLogger` / `LoggerRegistry`. Produces one file per group; Reporter merge is not used.
 
 ### With preconditions and step descriptions
 

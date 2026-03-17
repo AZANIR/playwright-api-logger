@@ -158,7 +158,7 @@ test.describe('withApiLogging', () => {
     fs.rmSync(logDir, { recursive: true });
   });
 
-  test('should extract testInfo properties when given TestInfo-like object', async () => {
+  test('should extract testFile and titlePath from options object', async () => {
     const logDir = createTempLogDir();
     const request = createMockRequest();
 
