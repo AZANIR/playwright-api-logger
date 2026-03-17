@@ -19,8 +19,6 @@ function readLogFile(logDir: string): any {
 
 // Mock APIRequestContext — minimal implementation for testing proxy
 function createMockRequest() {
-  const responses = new Map<string, any>();
-
   const mockResponse = (status: number, body: any, url: string) => ({
     status: () => status,
     url: () => url,

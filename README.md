@@ -458,10 +458,10 @@ reporter: [['list'], ['playwright-api-logger/reporter']]
 ### Factory functions
 
 | Function | Description |
-|---------|-------------|
-| `createApiLogger(testName, context?)` | Create logger with test context (default: `'test'`) |
-| `createSetupLogger(testName)` | Create logger with `preconditions` context |
-| `createTeardownLogger(testName)` | Create logger with `teardown` context |
+|----------|-------------|
+| `createApiLogger(testName, contextOrConfig?)` | Create logger with test context. Second arg: `LogContext` ('preconditions'\|'test'\|'teardown') or `Partial<LoggerConfig>` (e.g. `{ logDirectory }`) |
+| `createSetupLogger(testName, config?)` | Create logger with `preconditions` context. Optional `config` (e.g. `{ logDirectory }`) |
+| `createTeardownLogger(testName, config?)` | Create logger with `teardown` context. Optional `config` (e.g. `{ logDirectory }`) |
 
 ### LoggerRegistry
 
