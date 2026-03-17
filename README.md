@@ -81,13 +81,15 @@ npm install playwright-api-logger
 import { withApiLogging } from 'playwright-api-logger';
 
 export const test = base.extend({
-  apiClient: async ({ request }, use, testInfo) => {
-    const loggedRequest = withApiLogging(request, testInfo);
-    const apiClient = new ApiClient(loggedRequest);
-    await use(apiClient);
-    loggedRequest.__logger.finalize(
+  loggedRequest: async ({ request }, use, testInfo) => {
+    const logged = withApiLogging(request, testInfo);
+    await use(logged);
+    logged.__logger.finalize(
       testInfo.status === 'passed' ? 'PASSED' : 'FAILED'
     );
+  },
+  apiClient: async ({ loggedRequest }, use) => {
+    await use(new ApiClient(loggedRequest));
   },
 });
 ```
@@ -132,19 +134,38 @@ Reporter options:
 
 ### With preconditions and step descriptions
 
+Expose `loggedRequest` as a fixture to access the logger in tests:
+
 ```typescript
-test('GET Without token (401)', async ({ apiClient, request }) => {
-  const loggedRequest = (request as any).__logger as ApiLogger;
+// fixtures.ts
+export const test = base.extend({
+  loggedRequest: async ({ request }, use, testInfo) => {
+    const logged = withApiLogging(request, testInfo);
+    await use(logged);
+    logged.__logger.finalize(
+      testInfo.status === 'passed' ? 'PASSED' : 'FAILED'
+    );
+  },
+  apiClient: async ({ loggedRequest }, use) => {
+    await use(new ApiClient(loggedRequest));
+  },
+});
+```
+
+```typescript
+// test file
+test('GET Without token (401)', async ({ apiClient, loggedRequest }) => {
+  const logger = loggedRequest.__logger;
 
   // Mark following calls as preconditions
-  loggedRequest.startPreconditions();
-  loggedRequest.describe('Get employee ID for test');
+  logger.startPreconditions();
+  logger.describe('Get employee ID for test');
   const employees = await apiClient.getEmployees({ page: 1, size: 1 });
   const employeeId = employees.items[0].id;
 
   // Switch to test steps
-  loggedRequest.startTest();
-  loggedRequest.describe('Get children without auth token');
+  logger.startTest();
+  logger.describe('Get children without auth token');
   const response = await apiClient.getChildrenWithoutAuth(employeeId);
   expect(response.status).toBe(401);
 });
@@ -179,6 +200,7 @@ logs/
   "test": {
     "name": "GET Without token (401)",
     "file": "tests/api/employees/children.spec.ts",
+    "titlePath": ["", "GET /api/v1/employees/{id}/children", "GET Without token (401)"],
     "startedAt": "2026-03-16T18:33:03.654Z",
     "finishedAt": "2026-03-16T18:33:04.300Z",
     "duration": 646,
