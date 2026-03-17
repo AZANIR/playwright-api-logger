@@ -6,6 +6,7 @@
 import type { APIRequestContext, APIResponse, TestInfo } from '@playwright/test';
 import { ApiLogger } from './ApiLogger';
 import { LogContext, LoggerConfig } from './types';
+import { getSharedLogger } from './LoggerRegistry';
 
 export interface ApiLoggingOptions {
   /** Test name for log filename (auto-detected from testInfo if provided) */
@@ -18,8 +19,10 @@ export interface ApiLoggingOptions {
   logDirectory?: string;
   /** Mask Authorization headers (default: true) */
   maskAuthTokens?: boolean;
-  /** Existing logger to share across setup/test/teardown phases */
+  /** Existing logger instance to reuse */
   logger?: ApiLogger;
+  /** Shared logger key — use same key in beforeAll/test/afterAll to write ONE log file */
+  sharedKey?: string;
 }
 
 /**
@@ -36,15 +39,12 @@ export interface ApiLoggingOptions {
  * const apiClient = new ApiClient(loggedRequest);
  *
  * @example
- * // With preconditions and test steps:
- * const loggedRequest = withApiLogging(request, testInfo);
- * loggedRequest.__logger.startPreconditions();
- * loggedRequest.__logger.describe('Get employee for test');
- * await apiClient.getEmployees();
- * loggedRequest.__logger.startTest();
- * loggedRequest.__logger.describe('Try to access without token');
- * await apiClient.getWithoutAuth();
- * loggedRequest.__logger.finalize('PASSED');
+ * // Shared logger across beforeAll/test/afterAll:
+ * const loggedRequest = withApiLogging(request, {
+ *   sharedKey: 'my-describe',
+ *   testName: 'My Test',
+ *   context: 'preconditions'
+ * });
  */
 export function withApiLogging(
   request: APIRequestContext,
@@ -63,10 +63,24 @@ export function withApiLogging(
     options = (testInfoOrOptions as ApiLoggingOptions) || {};
   }
 
-  // Use shared logger or create new
+  // Resolve logger: shared → existing → new
   let logger: ApiLogger;
 
-  if (options.logger) {
+  if (options.sharedKey) {
+    // Shared logger by key — same instance across beforeAll/test/afterAll
+    const config: LoggerConfig = {
+      testName: options.testName,
+      testFile: options.testFile,
+      context: options.context || 'test',
+      logDirectory: options.logDirectory,
+      maskAuthTokens: options.maskAuthTokens,
+    };
+    logger = getSharedLogger(options.sharedKey, config);
+    // Switch context for this phase
+    if (options.context) {
+      logger.setContext(options.context);
+    }
+  } else if (options.logger) {
     logger = options.logger;
     if (options.context) {
       logger.setContext(options.context);
