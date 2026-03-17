@@ -3,6 +3,7 @@ export type LogContext = 'preconditions' | 'test' | 'teardown';
 export interface LoggerConfig {
   testName?: string;
   testFile?: string;
+  titlePath?: string[];
   context?: LogContext;
   logDirectory?: string;
   maskAuthTokens?: boolean;
@@ -36,6 +37,7 @@ export interface TestLogDocument {
   test: {
     name: string;
     file?: string;
+    titlePath?: string[];
     startedAt: string;
     finishedAt?: string;
     duration?: number;

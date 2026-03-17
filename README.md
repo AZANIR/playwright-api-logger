@@ -32,10 +32,11 @@ flowchart LR
         PR[Proxy over APIRequestContext]
         AL[ApiLogger]
         CG[CurlGenerator]
+        RP["ApiLoggerReporter<br/>(merge + summary)"]
     end
 
     subgraph O[Output]
-        LOG["logs/TEST_*.log<br/>request, response, curl, duration"]
+        LOG["logs/*.log<br/>structured JSON per test"]
         RC[Ready-to-use curl for Postman / terminal]
     end
 
@@ -43,8 +44,9 @@ flowchart LR
     W --> PR
     C --> PR
     PR --> AL
-    AL --> LOG
     AL --> CG
+    AL -->|"raw files"| RP
+    RP -->|"merged"| LOG
     CG --> RC
 ```
 
@@ -56,6 +58,7 @@ API_LOGS=false → Logging OFF  (zero overhead, default)
 ## Features
 
 - **One-line integration** — just wrap `request` with `withApiLogging()`, zero changes to controllers/clients
+- **Playwright Reporter** — auto-merges related log files (beforeAll + test + afterAll → one file), prints summary
 - **Structured logs** — one JSON document per test with `preconditions`, `steps`, and `teardown` sections
 - **Step descriptions** — describe what each API call does with `.describe()`
 - **Curl Export** — copy from log, paste into terminal or import into Postman
@@ -90,6 +93,42 @@ export const test = base.extend({
 ```
 
 No changes to your controllers, clients, or test files.
+
+### Add the Reporter (recommended)
+
+Add the reporter to `playwright.config.ts` for automatic log merging and summary:
+
+```typescript
+// playwright.config.ts
+import { defineConfig } from '@playwright/test';
+
+export default defineConfig({
+  reporter: [
+    ['list'],
+    ['playwright-api-logger/reporter']
+  ],
+  // ...
+});
+```
+
+The reporter will:
+- **Auto-merge** related log files from `beforeAll` + `test` + `afterAll` into one structured document
+- **Print summary** after the test run (number of log files, total API requests, duration)
+
+```
+  [playwright-api-logger] 5 log files, 23 API requests (4.2s)
+  [playwright-api-logger] Logs: /path/to/project/logs
+```
+
+Reporter options:
+
+```typescript
+['playwright-api-logger/reporter', {
+  logDirectory: 'custom-logs',  // default: 'logs'
+  merge: true,                  // auto-merge related files (default: true)
+  printSummary: true,           // print summary at end (default: true)
+}]
+```
 
 ### With preconditions and step descriptions
 
@@ -214,6 +253,20 @@ loggedRequest.__logger // access the ApiLogger instance
 | `isEnabled()` | Check if logging is active |
 | `getLogFilePath()` | Get current log file path |
 
+### `ApiLoggerReporter` — Playwright Reporter
+
+Auto-merges related log files and prints summary. Add to `playwright.config.ts`:
+
+```typescript
+reporter: [['list'], ['playwright-api-logger/reporter']]
+```
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `logDirectory` | `'logs'` | Directory for log files |
+| `merge` | `true` | Auto-merge related log files by describe block |
+| `printSummary` | `true` | Print API request summary after test run |
+
 ### `CurlGenerator`
 
 | Method | Description |
@@ -232,10 +285,11 @@ loggedRequest.__logger // access the ApiLogger instance
 {
   testName?: string;        // Test name (default: 'unknown-test')
   testFile?: string;        // Test file path
+  titlePath?: string[];     // Test hierarchy path (auto-detected from testInfo)
   context?: LogContext;      // 'preconditions' | 'test' | 'teardown'
   logDirectory?: string;     // Custom log dir (default: 'logs/')
   maskAuthTokens?: boolean;  // Mask auth headers (default: true)
-  logger?: ApiLogger;        // Share logger across phases
+  logger?: ApiLogger;        // Reuse existing logger instance
 }
 ```
 

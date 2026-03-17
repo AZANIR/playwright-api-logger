@@ -27,6 +27,7 @@ export class ApiLogger {
   private enabled: boolean;
   private testName: string;
   private testFile?: string;
+  private titlePath?: string[];
   private currentContext: LogContext;
   private logDirectory: string;
   private logFilePath: string | null = null;
@@ -46,6 +47,7 @@ export class ApiLogger {
 
     this.testName = config.testName || 'unknown-test';
     this.testFile = config.testFile;
+    this.titlePath = config.titlePath;
     this.currentContext = config.context || 'test';
     this.logDirectory = config.logDirectory || this.getDefaultLogDirectory();
     this.maskAuthTokens = config.maskAuthTokens ?? true;
@@ -218,6 +220,7 @@ export class ApiLogger {
         test: {
           name: this.testName,
           file: this.testFile || additionalInfo?.testFile,
+          titlePath: this.titlePath,
           startedAt: this.startedAt,
           finishedAt,
           duration: endTime - startTime,

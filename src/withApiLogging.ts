@@ -13,6 +13,8 @@ export interface ApiLoggingOptions {
   testName?: string;
   /** Test file path (auto-detected from testInfo if provided) */
   testFile?: string;
+  /** Test title path hierarchy (auto-detected from testInfo if provided) */
+  titlePath?: string[];
   /** Log context: 'preconditions' | 'test' | 'teardown' (default: 'test') */
   context?: LogContext;
   /** Custom log directory (default: 'logs/') */
@@ -57,6 +59,7 @@ export function withApiLogging(
     options = {
       testName: testInfo.title,
       testFile: testInfo.file,
+      titlePath: testInfo.titlePath,
       context: 'test',
     };
   } else {
@@ -71,6 +74,7 @@ export function withApiLogging(
     const config: LoggerConfig = {
       testName: options.testName,
       testFile: options.testFile,
+      titlePath: options.titlePath,
       context: options.context || 'test',
       logDirectory: options.logDirectory,
       maskAuthTokens: options.maskAuthTokens,
@@ -89,6 +93,7 @@ export function withApiLogging(
     const config: LoggerConfig = {
       testName: options.testName,
       testFile: options.testFile,
+      titlePath: options.titlePath,
       context: options.context || 'test',
       logDirectory: options.logDirectory,
       maskAuthTokens: options.maskAuthTokens,
