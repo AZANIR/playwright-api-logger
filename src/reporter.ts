@@ -19,8 +19,6 @@ import type {
   Reporter,
   FullConfig,
   Suite,
-  TestCase,
-  TestResult,
   FullResult,
 } from '@playwright/test/reporter';
 import { StepLogEntry, TestLogDocument } from './types';
@@ -44,7 +42,6 @@ class ApiLoggerReporter implements Reporter {
   private logDirectory: string;
   private merge: boolean;
   private printSummary: boolean;
-  private testResults = new Map<string, 'PASSED' | 'FAILED' | 'SKIPPED'>();
 
   constructor(options: ApiLoggerReporterOptions = {}) {
     this.logDirectory = options.logDirectory
@@ -65,19 +62,6 @@ class ApiLoggerReporter implements Reporter {
     } catch {
       // Ignore — ApiLogger will also try to create it
     }
-  }
-
-  /**
-   * Track test results for enriching log files
-   */
-  onTestEnd(test: TestCase, result: TestResult): void {
-    const key = `${test.location.file}::${test.titlePath().join(' > ')}`;
-    const status = result.status === 'passed'
-      ? 'PASSED'
-      : result.status === 'failed'
-        ? 'FAILED'
-        : 'SKIPPED';
-    this.testResults.set(key, status);
   }
 
   /**
@@ -192,7 +176,9 @@ class ApiLoggerReporter implements Reporter {
    * - Middle files' steps → test steps section
    * - Last file's steps → teardown section
    * - If only 2 files: first → preconditions, second → steps
-   * - Preserves existing section assignments (if user set context manually)
+   * - Note: Per-document section assignments (preconditions/steps/teardown) are
+   *   flattened and reassigned by file order; manual context in a single file
+   *   is not preserved when merging.
    */
   private mergeGroup(_groupKey: string, group: ParsedLogFile[]): void {
     // Sort by startedAt timestamp (earliest first)

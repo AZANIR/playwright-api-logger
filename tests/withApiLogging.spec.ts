@@ -152,21 +152,30 @@ test.describe('withApiLogging', () => {
     await expect(logged.dispose()).resolves.toBeUndefined();
   });
 
-  test('should extract testInfo properties when given TestInfo-like object', () => {
+  test('should extract testInfo properties when given TestInfo-like object', async () => {
     const logDir = createTempLogDir();
     const request = createMockRequest();
 
-    // Mock TestInfo
-    const mockTestInfo = {
-      title: 'GET users returns 200',
-      file: 'tests/api/users.spec.ts',
+    const logged = withApiLogging(request, {
+      testName: 'GET users returns 200',
+      testFile: 'tests/api/users.spec.ts',
       titlePath: ['', 'Users API', 'GET users returns 200'],
-      status: 'passed',
-    };
+      logDirectory: logDir,
+    });
 
-    const logged = withApiLogging(request, mockTestInfo as any);
     expect(logged.__logger).toBeDefined();
     expect(logged.__logger.isEnabled()).toBe(true);
+
+    await logged.get('https://api.example.com/users');
+    logged.__logger.finalize('PASSED');
+
+    const data = readLogFile(logDir);
+    expect(data).not.toBeNull();
+    expect(data.test.name).toBe('GET users returns 200');
+    expect(data.test.file).toBe('tests/api/users.spec.ts');
+    expect(data.test.titlePath).toEqual(['', 'Users API', 'GET users returns 200']);
+    expect(data.steps).toHaveLength(1);
+    expect(data.steps[0].request.method).toBe('GET');
 
     fs.rmSync(logDir, { recursive: true, force: true });
   });

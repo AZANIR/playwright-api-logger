@@ -466,20 +466,4 @@ test.describe('ApiLoggerReporter', () => {
       fs.rmSync(logDir, { recursive: true });
     });
   });
-
-  test.describe('onTestEnd', () => {
-    test('should track test results', () => {
-      const reporter = new ApiLoggerReporter({ printSummary: false });
-
-      const mockTest = {
-        location: { file: 'tests/api.spec.ts' },
-        titlePath: () => ['', 'Suite', 'test name'],
-      } as any;
-
-      const mockResult = { status: 'passed' } as any;
-
-      // Should not throw
-      expect(() => reporter.onTestEnd(mockTest, mockResult)).not.toThrow();
-    });
-  });
 });

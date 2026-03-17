@@ -313,10 +313,8 @@ test.describe('ApiLogger', () => {
     });
 
     test('createSetupLogger creates logger with preconditions context', () => {
-      const logDir = createTempLogDir();
       const logger = createSetupLogger('setup-test');
       expect(logger.isEnabled()).toBe(true);
-      fs.rmSync(logDir, { recursive: true });
     });
 
     test('createTeardownLogger creates logger with teardown context', () => {

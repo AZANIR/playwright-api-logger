@@ -58,7 +58,7 @@ API_LOGS=false → Logging OFF  (zero overhead, default)
 ## Features
 
 - **One-line integration** — just wrap `request` with `withApiLogging()`, zero changes to controllers/clients
-- **Playwright Reporter** — auto-merges related log files (beforeAll + test + afterAll → one file), prints summary
+- **Playwright Reporter** — auto-merges related log files (when `titlePath`/`file` are set), prints summary
 - **Structured logs** — one JSON document per test with `preconditions`, `steps`, and `teardown` sections
 - **Step descriptions** — describe what each API call does with `.describe()`
 - **Curl Export** — copy from log, paste into terminal or import into Postman
@@ -114,7 +114,7 @@ export default defineConfig({
 ```
 
 The reporter will:
-- **Auto-merge** related log files from `beforeAll` + `test` + `afterAll` into one structured document
+- **Auto-merge** related log files from `beforeAll` + `test` + `afterAll` into one structured document. For merge to work, log files must have `test.file` and `test.titlePath` (≥3 elements). Hooks don't receive `testInfo` — pass these manually, e.g. via `withApiLogging(request, { sharedKey, testFile, titlePath, context })`.
 - **Print summary** after the test run (number of log files, total API requests, duration)
 
 ```
@@ -131,6 +131,25 @@ Reporter options:
   printSummary: true,           // print summary at end (default: true)
 }]
 ```
+
+### Merge with beforeAll/afterAll hooks
+
+For merge to work, each logger (including in hooks) must have `testFile` and `titlePath`:
+
+```typescript
+test.beforeAll(async ({ request }) => {
+  const logged = withApiLogging(request, {
+    sharedKey: 'my-suite',
+    testName: 'Setup',
+    testFile: 'tests/api/users.spec.ts',
+    titlePath: ['', 'Users API', 'Setup'],
+    context: 'preconditions',
+  });
+  // ... use logged
+});
+```
+
+Or use `sharedKey` to write one log file — then merge is not needed.
 
 ### With preconditions and step descriptions
 
@@ -182,6 +201,111 @@ API_LOGS=false
 # Run with logging enabled
 API_LOGS=true npx playwright test
 ```
+
+### Try the demo (this repo)
+
+Run the demo test to see log files in `logs/`:
+
+```bash
+npm run test:demo
+```
+
+Creates `logs/demo-api-calls_*.log` — inspect the structured JSON output.
+
+## Usage variants
+
+| Variant | When to use |
+|---------|--------------|
+| **Fixture** | Recommended for projects — one setup, `loggedRequest` in every test |
+| **Direct in test** | Demo, one-off tests, custom options |
+| **Options object** | Hooks (no `testInfo`), custom `logDirectory`, `sharedKey` |
+| **Factory functions** | Standalone logger without request proxy (e.g. custom clients) |
+| **LoggerRegistry** | Advanced: shared logger across hooks via `getSharedLogger` / `finalizeSharedLogger` |
+
+### 1. Fixture (recommended)
+
+```typescript
+export const test = base.extend({
+  loggedRequest: async ({ request }, use, testInfo) => {
+    const logged = withApiLogging(request, testInfo);
+    await use(logged);
+    logged.__logger.finalize(testInfo.status === 'passed' ? 'PASSED' : 'FAILED');
+  },
+});
+```
+
+### 2. Direct in test
+
+Call `withApiLogging()` inside the test body. Useful for demos or when you need custom options:
+
+```typescript
+test('my API test', async ({ request }) => {
+  const logged = withApiLogging(request, {
+    testName: 'My API test',
+    testFile: 'tests/api.spec.ts',
+    titlePath: ['', 'API', 'my API test'],
+    logDirectory: 'logs',
+  });
+
+  await logged.get('https://api.example.com/users');
+  logged.__logger.finalize('PASSED');
+});
+```
+
+### 3. Options instead of testInfo
+
+Pass `ApiLoggingOptions` when `testInfo` is not available (e.g. in `beforeAll`/`afterAll`):
+
+```typescript
+// Hooks don't receive testInfo — pass options manually
+test.beforeAll(async ({ request }) => {
+  const logged = withApiLogging(request, {
+    sharedKey: 'my-suite',
+    testName: 'Setup',
+    testFile: 'tests/api/users.spec.ts',
+    titlePath: ['', 'Users API', 'Setup'],
+    context: 'preconditions',
+    logDirectory: 'logs',
+  });
+  // ... use logged
+});
+```
+
+### 4. Factory functions
+
+Create a standalone `ApiLogger` without wrapping a request. Use when you have a custom API client that accepts a logger:
+
+```typescript
+import { createApiLogger, createSetupLogger, createTeardownLogger } from 'playwright-api-logger';
+
+// Test context (default)
+const logger = createApiLogger('my-test');
+
+// Preconditions context
+const setupLogger = createSetupLogger('setup-test');
+
+// Teardown context
+const teardownLogger = createTeardownLogger('teardown-test');
+
+// Use with custom client
+logger.logApiCall('GET', url, headers, body, status, ...);
+logger.finalize('PASSED');
+```
+
+### 5. LoggerRegistry (advanced)
+
+For shared logger across `beforeAll` / `test` / `afterAll` without using `withApiLogging`:
+
+```typescript
+import { getSharedLogger, finalizeSharedLogger } from 'playwright-api-logger';
+
+const key = 'my-describe-block';
+const logger = getSharedLogger(key, { testName: 'My Test', logDirectory: 'logs' });
+// ... make API calls via your client
+finalizeSharedLogger(key, 'PASSED');
+```
+
+Or use `sharedKey` in `withApiLogging` — it uses `LoggerRegistry` internally.
 
 ## Log Output
 
@@ -257,9 +381,24 @@ logs/
 
 Main integration point. Wraps `APIRequestContext` with a Proxy that logs all HTTP calls.
 
+**Arguments:**
+- `request` — Playwright `APIRequestContext`
+- `testInfoOrOptions` — `TestInfo` (auto-extracts `title`, `file`, `titlePath`) or `ApiLoggingOptions`
+
 ```typescript
+// With testInfo (from fixture)
 const loggedRequest = withApiLogging(request, testInfo);
-loggedRequest.__logger // access the ApiLogger instance
+
+// With options (hooks, custom config)
+const loggedRequest = withApiLogging(request, {
+  testName: 'My Test',
+  testFile: 'tests/api.spec.ts',
+  titlePath: ['', 'Suite', 'My Test'],
+  logDirectory: 'logs',
+  sharedKey: 'my-suite',  // for beforeAll/test/afterAll
+});
+
+loggedRequest.__logger  // access the ApiLogger instance
 ```
 
 ### `ApiLogger` — context & description
@@ -308,12 +447,30 @@ reporter: [['list'], ['playwright-api-logger/reporter']]
   testName?: string;        // Test name (default: 'unknown-test')
   testFile?: string;        // Test file path
   titlePath?: string[];     // Test hierarchy path (auto-detected from testInfo)
-  context?: LogContext;      // 'preconditions' | 'test' | 'teardown'
-  logDirectory?: string;     // Custom log dir (default: 'logs/')
-  maskAuthTokens?: boolean;  // Mask auth headers (default: true)
-  logger?: ApiLogger;        // Reuse existing logger instance
+  context?: LogContext;     // 'preconditions' | 'test' | 'teardown'
+  logDirectory?: string;    // Custom log dir (default: 'logs/')
+  maskAuthTokens?: boolean; // Mask auth headers (default: true)
+  logger?: ApiLogger;       // Reuse existing logger instance
+  sharedKey?: string;      // Same key in beforeAll/test/afterAll → one log file
 }
 ```
+
+### Factory functions
+
+| Function | Description |
+|---------|-------------|
+| `createApiLogger(testName, context?)` | Create logger with test context (default: `'test'`) |
+| `createSetupLogger(testName)` | Create logger with `preconditions` context |
+| `createTeardownLogger(testName)` | Create logger with `teardown` context |
+
+### LoggerRegistry
+
+| Function | Description |
+|----------|-------------|
+| `getSharedLogger(key, config)` | Get or create shared logger by key |
+| `finalizeSharedLogger(key, result, info?)` | Write log and remove from registry |
+| `hasSharedLogger(key)` | Check if logger exists |
+| `removeSharedLogger(key)` | Remove without finalizing |
 
 ## Migration from v1 → v2
 
