@@ -220,7 +220,7 @@ export class ApiLogger {
         test: {
           name: this.testName,
           file: this.testFile || additionalInfo?.testFile,
-          titlePath: this.titlePath,
+          titlePath: this.titlePath || additionalInfo?.titlePath,
           startedAt: this.startedAt,
           finishedAt,
           duration: endTime - startTime,
@@ -285,21 +285,38 @@ export class ApiLogger {
 
 /**
  * Factory function for creating test-context loggers
+ * @param contextOrConfig - LogContext ('preconditions'|'test'|'teardown') or Partial<LoggerConfig>
  */
-export function createApiLogger(testName: string, context: LogContext = 'test'): ApiLogger {
-  return new ApiLogger({ testName, context });
+export function createApiLogger(
+  testName: string,
+  contextOrConfig?: LogContext | Partial<LoggerConfig>,
+): ApiLogger {
+  const isContext = (x: unknown): x is LogContext =>
+    x === 'preconditions' || x === 'test' || x === 'teardown';
+  const config = !contextOrConfig
+    ? { testName, context: 'test' as LogContext }
+    : isContext(contextOrConfig)
+      ? { testName, context: contextOrConfig }
+      : { testName, context: 'test' as LogContext, ...contextOrConfig };
+  return new ApiLogger(config);
 }
 
 /**
  * Factory for setup/preconditions context
  */
-export function createSetupLogger(testName: string): ApiLogger {
-  return new ApiLogger({ testName, context: 'preconditions' });
+export function createSetupLogger(
+  testName: string,
+  config?: Partial<LoggerConfig>,
+): ApiLogger {
+  return new ApiLogger({ testName, context: 'preconditions', ...config });
 }
 
 /**
  * Factory for teardown context
  */
-export function createTeardownLogger(testName: string): ApiLogger {
-  return new ApiLogger({ testName, context: 'teardown' });
+export function createTeardownLogger(
+  testName: string,
+  config?: Partial<LoggerConfig>,
+): ApiLogger {
+  return new ApiLogger({ testName, context: 'teardown', ...config });
 }

@@ -34,14 +34,15 @@ function writeRawLog(
 test.describe('ApiLoggerReporter', () => {
   test.describe('onBegin', () => {
     test('should create log directory if it does not exist', () => {
-      const logDir = path.join(os.tmpdir(), `reporter-create-${Date.now()}`);
+      const parentDir = fs.mkdtempSync(path.join(os.tmpdir(), 'reporter-parent-'));
+      const logDir = path.join(parentDir, 'logs');
       const reporter = new ApiLoggerReporter({ logDirectory: logDir });
 
       expect(fs.existsSync(logDir)).toBe(false);
       reporter.onBegin({} as any, {} as any);
       expect(fs.existsSync(logDir)).toBe(true);
 
-      fs.rmSync(logDir, { recursive: true });
+      fs.rmSync(parentDir, { recursive: true });
     });
 
     test('should not throw if directory already exists', () => {

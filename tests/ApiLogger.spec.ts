@@ -27,8 +27,10 @@ test.describe('ApiLogger', () => {
     });
 
     test('should be enabled when API_LOGS=true', () => {
-      const logger = new ApiLogger({ testName: 'test-enabled' });
+      const logDir = createTempLogDir();
+      const logger = new ApiLogger({ testName: 'test-enabled', logDirectory: logDir });
       expect(logger.isEnabled()).toBe(true);
+      fs.rmSync(logDir, { recursive: true });
     });
 
     test('should create log file on finalize', () => {
@@ -308,18 +310,24 @@ test.describe('ApiLogger', () => {
     });
 
     test('createApiLogger creates logger with test context', () => {
-      const logger = createApiLogger('my-test');
+      const logDir = createTempLogDir();
+      const logger = createApiLogger('my-test', { logDirectory: logDir });
       expect(logger.isEnabled()).toBe(true);
+      fs.rmSync(logDir, { recursive: true });
     });
 
     test('createSetupLogger creates logger with preconditions context', () => {
-      const logger = createSetupLogger('setup-test');
+      const logDir = createTempLogDir();
+      const logger = createSetupLogger('setup-test', { logDirectory: logDir });
       expect(logger.isEnabled()).toBe(true);
+      fs.rmSync(logDir, { recursive: true });
     });
 
     test('createTeardownLogger creates logger with teardown context', () => {
-      const logger = createTeardownLogger('teardown-test');
+      const logDir = createTempLogDir();
+      const logger = createTeardownLogger('teardown-test', { logDirectory: logDir });
       expect(logger.isEnabled()).toBe(true);
+      fs.rmSync(logDir, { recursive: true });
     });
   });
 });

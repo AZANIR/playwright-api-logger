@@ -24,24 +24,33 @@ test.describe('LoggerRegistry', () => {
   });
 
   test('getSharedLogger should create a new logger on first call', () => {
+    const logDir = createTempLogDir();
     const key = `test-create-${Date.now()}`;
-    const logger = getSharedLogger(key, { testName: 'shared-test' });
+    const logger = getSharedLogger(key, {
+      testName: 'shared-test',
+      logDirectory: logDir,
+    });
 
     expect(logger).toBeInstanceOf(ApiLogger);
     expect(hasSharedLogger(key)).toBe(true);
 
-    // Cleanup
     removeSharedLogger(key);
+    fs.rmSync(logDir, { recursive: true });
   });
 
   test('getSharedLogger should return same instance on subsequent calls', () => {
+    const logDir = createTempLogDir();
     const key = `test-same-${Date.now()}`;
-    const logger1 = getSharedLogger(key, { testName: 'shared-test' });
+    const logger1 = getSharedLogger(key, {
+      testName: 'shared-test',
+      logDirectory: logDir,
+    });
     const logger2 = getSharedLogger(key);
 
     expect(logger1).toBe(logger2);
 
     removeSharedLogger(key);
+    fs.rmSync(logDir, { recursive: true });
   });
 
   test('hasSharedLogger should return false for unknown keys', () => {
@@ -49,12 +58,17 @@ test.describe('LoggerRegistry', () => {
   });
 
   test('removeSharedLogger should remove logger without finalizing', () => {
+    const logDir = createTempLogDir();
     const key = `test-remove-${Date.now()}`;
-    getSharedLogger(key, { testName: 'remove-test' });
+    getSharedLogger(key, {
+      testName: 'remove-test',
+      logDirectory: logDir,
+    });
     expect(hasSharedLogger(key)).toBe(true);
 
     removeSharedLogger(key);
     expect(hasSharedLogger(key)).toBe(false);
+    fs.rmSync(logDir, { recursive: true });
   });
 
   test('finalizeSharedLogger should write log and remove from registry', () => {

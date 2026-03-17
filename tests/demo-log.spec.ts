@@ -25,6 +25,11 @@ function createMockRequest() {
 }
 
 test.describe('Demo log test', () => {
+  test.skip(
+    () => process.env.API_LOGS !== 'true',
+    'Run with npm run test:demo',
+  );
+
   test.beforeEach(() => {
     process.env.API_LOGS = 'true';
   });

@@ -67,13 +67,16 @@ test.describe('withApiLogging', () => {
   });
 
   test('should return a proxied request with __logger', () => {
+    const logDir = createTempLogDir();
     const request = createMockRequest();
     const logged = withApiLogging(request, {
       testName: 'test-proxy',
+      logDirectory: logDir,
     });
 
     expect(logged.__logger).toBeDefined();
     expect(logged.__logger).toBeInstanceOf(ApiLogger);
+    fs.rmSync(logDir, { recursive: true });
   });
 
   test('should intercept GET calls and log them', async () => {
@@ -145,11 +148,16 @@ test.describe('withApiLogging', () => {
   });
 
   test('should pass through non-HTTP methods unchanged', async () => {
+    const logDir = createTempLogDir();
     const request = createMockRequest();
-    const logged = withApiLogging(request, { testName: 'test-passthrough' });
+    const logged = withApiLogging(request, {
+      testName: 'test-passthrough',
+      logDirectory: logDir,
+    });
 
     // dispose() is not an HTTP method, should pass through
     await expect(logged.dispose()).resolves.toBeUndefined();
+    fs.rmSync(logDir, { recursive: true });
   });
 
   test('should extract testInfo properties when given TestInfo-like object', async () => {
